@@ -4,20 +4,23 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const namespace = "victron"
+const (
+	namespace     = "victron"
+	clientIDLabel = "client_id"
+)
 
 var (
 	connectionStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "mqtt_connection_state",
 		Help:      "0=Disconnected; 1=Connected",
-	}, []string{"client_id"})
+	}, []string{clientIDLabel})
 
 	connectionStatusSinceTimeSeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "mqtt_connection_state_since_time_seconds",
 		Help:      "Time since last change to mqtt_connection_state",
-	}, []string{"client_id"})
+	}, []string{clientIDLabel})
 
 	subscriptionsUpdatesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,

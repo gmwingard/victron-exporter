@@ -1,3 +1,4 @@
+// Package main is the victron-exporter binary entry point.
 package main
 
 import (
@@ -6,6 +7,12 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	logFieldEnvVar        = "env_var"
+	logFieldEnvValue      = "env_value"
+	logFieldFallbackValue = "fallback_value"
 )
 
 func getEnv(key string, fallback string) string {
@@ -21,16 +28,17 @@ func getIntEnv(key string, fallback int) int {
 		i, err := strconv.Atoi(value)
 		if err != nil {
 			log.WithFields(log.Fields{
-				"env_var":   key,
-				"env_value": value}).
+				logFieldEnvVar:   key,
+				logFieldEnvValue: value}).
 				WithError(err).Fatal("Unable to parse ENV VAR as an INT")
 		}
 
 		return i
 	}
+
 	log.WithFields(log.Fields{
-		"env_var":        key,
-		"fallback_value": fallback}).
+		logFieldEnvVar:        key,
+		logFieldFallbackValue: fallback}).
 		Debug("Unable to find ENV VAR, falling back to default value")
 
 	return fallback
@@ -41,16 +49,17 @@ func getBoolEnv(key string, fallback bool) bool {
 		b, err := strconv.ParseBool(value)
 		if err != nil {
 			log.WithFields(log.Fields{
-				"env_var":   key,
-				"env_value": value}).
+				logFieldEnvVar:   key,
+				logFieldEnvValue: value}).
 				WithError(err).Fatal("Unable to parse ENV VAR as a BOOL")
 		}
 
 		return b
 	}
+
 	log.WithFields(log.Fields{
-		"env_var":        key,
-		"fallback_value": fallback}).
+		logFieldEnvVar:        key,
+		logFieldFallbackValue: fallback}).
 		Debug("Unable to find ENV VAR, falling back to default value")
 
 	return fallback
@@ -61,16 +70,17 @@ func getDurationEnv(key string, fallback time.Duration) time.Duration {
 		d, err := time.ParseDuration(value)
 		if err != nil {
 			log.WithFields(log.Fields{
-				"env_var":   key,
-				"env_value": value}).
+				logFieldEnvVar:   key,
+				logFieldEnvValue: value}).
 				WithError(err).Fatal("Unable to parse ENV VAR as a DURATION")
 		}
 
 		return d
 	}
+
 	log.WithFields(log.Fields{
-		"env_var":        key,
-		"fallback_value": fallback}).
+		logFieldEnvVar:        key,
+		logFieldFallbackValue: fallback}).
 		Debug("Unable to find ENV VAR, falling back to default value")
 
 	return fallback

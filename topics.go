@@ -6,6 +6,13 @@ import (
 
 type mqttObserver func(componentType string, componentId string, value float64)
 
+const (
+	phaseLabel     = "phase"
+	alarmTypeLabel = "alarm_type"
+
+	ledStateHelp = "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted"
+)
+
 var labels = []string{"component_type", "component_id"}
 
 func gaugeObserver(opts prometheus.GaugeOpts) mqttObserver {
@@ -18,11 +25,24 @@ func gaugeObserver(opts prometheus.GaugeOpts) mqttObserver {
 	}
 }
 
+// labeledGauge returns a gauge observer with a single ConstLabel attached.
+// Using a helper instead of inline struct literals keeps repeated metric names/help
+// text as function-call arguments, which the goconst linter exempts via ignore-calls.
+func labeledGauge(labelKey, labelValue, name, help string) mqttObserver {
+	return gaugeObserver(prometheus.GaugeOpts{
+		Name:        name,
+		Help:        help,
+		ConstLabels: prometheus.Labels{labelKey: labelValue},
+	})
+}
+
 func counterObserver(opts prometheus.CounterOpts) mqttObserver {
 	opts.Namespace = namespace
 	counter := prometheus.NewCounterVec(opts, labels)
 	prometheus.MustRegister(counter)
+
 	var prevValue float64
+
 	first := true
 
 	return func(componentType string, componentId string, value float64) {
@@ -36,28 +56,25 @@ func counterObserver(opts prometheus.CounterOpts) mqttObserver {
 		if prevValue <= value {
 			counter.WithLabelValues(componentType, componentId).Add(value - prevValue)
 		}
+
 		prevValue = value
 	}
 }
 
 func alarm(alarmType string) mqttObserver {
-	gauge := prometheus.GaugeOpts{
+	return gaugeObserver(prometheus.GaugeOpts{
 		Name:        "alarm",
 		Help:        "0=OK; 1=Warning; 2=Alarm",
-		ConstLabels: prometheus.Labels{"alarm_type": alarmType},
-	}
-
-	return gaugeObserver(gauge)
+		ConstLabels: prometheus.Labels{alarmTypeLabel: alarmType},
+	})
 }
 
 func phaseAlarm(phase string, alarmType string) mqttObserver {
-	gauge := prometheus.GaugeOpts{
+	return gaugeObserver(prometheus.GaugeOpts{
 		Name:        "phase_alarm",
 		Help:        "0=OK; 1=Warning; 2=Alarm",
-		ConstLabels: prometheus.Labels{"phase": phase, "alarm_type": alarmType},
-	}
-
-	return gaugeObserver(gauge)
+		ConstLabels: prometheus.Labels{phaseLabel: phase, alarmTypeLabel: alarmType},
+	})
 }
 
 // These paths are documented at
@@ -74,70 +91,25 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "ac_consumption_number_of_phases",
 			Help: "",
 		}),
-	"Ac/Consumption/L1/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_phase_power_watts",
-			Help:        "Total of ConsumptionOnInput & ConsumptionOnOutput",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/Consumption/L2/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_phase_power_watts",
-			Help:        "Total of ConsumptionOnInput & ConsumptionOnOutput",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/Consumption/L3/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_phase_power_watts",
-			Help:        "Total of ConsumptionOnInput & ConsumptionOnOutput",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
+	"Ac/Consumption/L1/Power": labeledGauge(phaseLabel, "1", "ac_consumption_phase_power_watts", "Total of ConsumptionOnInput & ConsumptionOnOutput"),
+	"Ac/Consumption/L2/Power": labeledGauge(phaseLabel, "2", "ac_consumption_phase_power_watts", "Total of ConsumptionOnInput & ConsumptionOnOutput"),
+	"Ac/Consumption/L3/Power": labeledGauge(phaseLabel, "3", "ac_consumption_phase_power_watts", "Total of ConsumptionOnInput & ConsumptionOnOutput"),
 	"Ac/ConsumptionOnInput/NumberOfPhases": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_consumption_on_input_number_of_phases",
 			Help: "",
 		}),
-	"Ac/ConsumptionOnInput/L1/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_on_input_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/ConsumptionOnInput/L2/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_on_input_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/ConsumptionOnInput/L3/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_on_input_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
+	"Ac/ConsumptionOnInput/L1/Power": labeledGauge(phaseLabel, "1", "ac_consumption_on_input_phase_power_watts", "W"),
+	"Ac/ConsumptionOnInput/L2/Power": labeledGauge(phaseLabel, "2", "ac_consumption_on_input_phase_power_watts", "W"),
+	"Ac/ConsumptionOnInput/L3/Power": labeledGauge(phaseLabel, "3", "ac_consumption_on_input_phase_power_watts", "W"),
 	"Ac/ConsumptionOnOutput/NumberOfPhases": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_consumption_on_output_number_of_phases",
 			Help: "",
 		}),
-	"Ac/ConsumptionOnOutput/L1/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_on_output_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/ConsumptionOnOutput/L2/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_on_output_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/ConsumptionOnOutput/L3/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_consumption_on_output_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
+	"Ac/ConsumptionOnOutput/L1/Power": labeledGauge(phaseLabel, "1", "ac_consumption_on_output_phase_power_watts", "W"),
+	"Ac/ConsumptionOnOutput/L2/Power": labeledGauge(phaseLabel, "2", "ac_consumption_on_output_phase_power_watts", "W"),
+	"Ac/ConsumptionOnOutput/L3/Power": labeledGauge(phaseLabel, "3", "ac_consumption_on_output_phase_power_watts", "W"),
 	"Dc/Battery/Alarms/CircuitBreakerTripped": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "dc_battery_alarms_circuit_breaker_tripped",
@@ -213,18 +185,8 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "buzzer_state",
 			Help: "",
 		}),
-	"Relay/0/State": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "relay_state",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"relay": "0"},
-		}),
-	"Relay/1/State": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "relay_state",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"relay": "1"},
-		}),
+	"Relay/0/State": labeledGauge("relay", "0", "relay_state", ""),
+	"Relay/1/State": labeledGauge("relay", "1", "relay_state", ""),
 	"SystemState/State": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "system_state",
@@ -326,30 +288,10 @@ var suffixTopicMap = map[string]mqttObserver{
 			Help: "User setting: Grid meter installed (on/off)",
 		}),
 	/** com.victronenergy.vebus */
-	"Ac/ActiveIn/L1/F": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_active_input_phase__freq_hz",
-			Help:        "Frequency",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/ActiveIn/L1/I": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_active_input_phase_current_amps",
-			Help:        "Current",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/ActiveIn/L1/P": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_active_input_phase_power_watts",
-			Help:        "Real power",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/ActiveIn/L1/V": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_active_input_phase_voltage_volts",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
+	"Ac/ActiveIn/L1/F": labeledGauge(phaseLabel, "1", "ac_active_input_phase__freq_hz", "Frequency"),
+	"Ac/ActiveIn/L1/I": labeledGauge(phaseLabel, "1", "ac_active_input_phase_current_amps", "Current"),
+	"Ac/ActiveIn/L1/P": labeledGauge(phaseLabel, "1", "ac_active_input_phase_power_watts", "Real power"),
+	"Ac/ActiveIn/L1/V": labeledGauge(phaseLabel, "1", "ac_active_input_phase_voltage_volts", ""),
 	"Ac/ActiveIn/P": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_active_input_power_watts",
@@ -365,30 +307,10 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "ac_active_input_active_input",
 			Help: "Active input: 0 = ACin-1, 1 = ACin-2, 240 is none (inverting).",
 		}),
-	"Ac/In/1/CurrentLimit": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_input_current_limit",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"input": "1"},
-		}),
-	"Ac/In/1/CurrentLimitIsAdjustable": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_input_current_limit_is_adjustable",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"input": "1"},
-		}),
-	"Ac/In/2/CurrentLimit": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_input_current_limit",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"input": "2"},
-		}),
-	"Ac/In/2/CurrentLimitIsAdjustable": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_input_current_limit_is_adjustable",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"input": "2"},
-		}),
+	"Ac/In/1/CurrentLimit":             labeledGauge("input", "1", "ac_input_current_limit", ""),
+	"Ac/In/1/CurrentLimitIsAdjustable": labeledGauge("input", "1", "ac_input_current_limit_is_adjustable", ""),
+	"Ac/In/2/CurrentLimit":             labeledGauge("input", "2", "ac_input_current_limit", ""),
+	"Ac/In/2/CurrentLimitIsAdjustable": labeledGauge("input", "2", "ac_input_current_limit_is_adjustable", ""),
 	"Ac/PowerMeasurementType": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_power_measurement_type",
@@ -410,30 +332,10 @@ var suffixTopicMap = map[string]mqttObserver{
 	"Alarms/L3/LowBattery":      phaseAlarm("3", "LowBattery"),
 	"Alarms/L3/Overload":        phaseAlarm("3", "Overload"),
 	"Alarms/L3/Ripple":          phaseAlarm("3", "Ripple"),
-	"Dc/0/Voltage": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_voltage_volts",
-			Help:        "V DC",
-			ConstLabels: prometheus.Labels{"n": "0"},
-		}),
-	"Dc/0/Current": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_current_amps",
-			Help:        "A DC",
-			ConstLabels: prometheus.Labels{"n": "0"},
-		}),
-	"Dc/0/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_power_watts",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"n": "0"},
-		}),
-	"Dc/0/Temperature": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_temperature_celsius",
-			Help:        "°C - Battery temperature",
-			ConstLabels: prometheus.Labels{"n": "0"},
-		}),
+	"Dc/0/Voltage":              labeledGauge("n", "0", "dc_voltage_volts", "V DC"),
+	"Dc/0/Current":              labeledGauge("n", "0", "dc_current_amps", "A DC"),
+	"Dc/0/Power":                labeledGauge("n", "0", "dc_power_watts", ""),
+	"Dc/0/Temperature":          labeledGauge("n", "0", "dc_temperature_celsius", "°C - Battery temperature"),
 	"Mode": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "mode",
@@ -457,42 +359,42 @@ var suffixTopicMap = map[string]mqttObserver{
 	"Leds/Mains": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_mains",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	"Leds/Bulk": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_bulk",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	"Leds/Absorption": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_absoption",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	"Leds/Float": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_float",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	"Leds/Inverter": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_inverter",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	"Leds/Overload": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_overload",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	"Leds/LowBattery": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_low_battery",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	"Leds/Temperature": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "led_temperature",
-			Help: "0 = Off, 1 = On, 2 = Blinking, 3 = Blinking inverted",
+			Help: ledStateHelp,
 		}),
 	/* com.victronenergy.inverter */
 	"Alarms/LowVoltage":       alarm("LowVoltage"),
@@ -507,53 +409,18 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "ac_output_power_watts",
 			Help: "AC Output power watts",
 		}),
-	"Ac/Out/L1/V": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_output_phase_volts",
-			Help:        "AC Output voltage",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/Out/L1/I": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_output_phase_current_amps",
-			Help:        "AC Output current",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/Out/L1/F": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_output_phase_freq_hz",
-			Help:        "AC Output frequency Hertz",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/Out/L1/P": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_output_phase_power_watts",
-			Help:        "Not used on vedirect inverters ",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
+	"Ac/Out/L1/V": labeledGauge(phaseLabel, "1", "ac_output_phase_volts", "AC Output voltage"),
+	"Ac/Out/L1/I": labeledGauge(phaseLabel, "1", "ac_output_phase_current_amps", "AC Output current"),
+	"Ac/Out/L1/F": labeledGauge(phaseLabel, "1", "ac_output_phase_freq_hz", "AC Output frequency Hertz"),
+	"Ac/Out/L1/P": labeledGauge(phaseLabel, "1", "ac_output_phase_power_watts", "Not used on vedirect inverters "),
 	"State": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "state",
 			Help: "",
 		}),
-	"Dc/0/MidVoltage": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_midvoltage_volts",
-			Help:        "V DC Mid voltage (BMV-702 configured to read midpoint voltage only)",
-			ConstLabels: prometheus.Labels{"n": "0"},
-		}),
-	"Dc/0/MidVoltageDeviation": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_midvoltage_deviation_percent",
-			Help:        "Percentage deviation",
-			ConstLabels: prometheus.Labels{"n": "0"},
-		}),
-	"Dc/1/Voltage": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_voltage_volts",
-			Help:        "V DC",
-			ConstLabels: prometheus.Labels{"n": "1"},
-		}),
+	"Dc/0/MidVoltage":          labeledGauge("n", "0", "dc_midvoltage_volts", "V DC Mid voltage (BMV-702 configured to read midpoint voltage only)"),
+	"Dc/0/MidVoltageDeviation": labeledGauge("n", "0", "dc_midvoltage_deviation_percent", "Percentage deviation"),
+	"Dc/1/Voltage":             labeledGauge("n", "1", "dc_voltage_volts", "V DC"),
 	"ConsumedAmphours": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "consumed_amphours",
@@ -757,30 +624,10 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "diagnostics_shutdowns_due_to_error_count",
 			Help: "",
 		}),
-	"Diagnostics/LastErrors/1/Error": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "diagnostics_last_error",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"e": "1"},
-		}),
-	"Diagnostics/LastErrors/2/Error": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "diagnostics_last_error",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"e": "2"},
-		}),
-	"Diagnostics/LastErrors/3/Error": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "diagnostics_last_error",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"e": "3"},
-		}),
-	"Diagnostics/LastErrors/4/Error": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "diagnostics_last_error",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"e": "4"},
-		}),
+	"Diagnostics/LastErrors/1/Error": labeledGauge("e", "1", "diagnostics_last_error", ""),
+	"Diagnostics/LastErrors/2/Error": labeledGauge("e", "2", "diagnostics_last_error", ""),
+	"Diagnostics/LastErrors/3/Error": labeledGauge("e", "3", "diagnostics_last_error", ""),
+	"Diagnostics/LastErrors/4/Error": labeledGauge("e", "4", "diagnostics_last_error", ""),
 	"Io/AllowToCharge": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "io_allow_to_charge",
@@ -856,78 +703,18 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "ac_power_watts",
 			Help: "W    - Total power of all phases, preferably real power",
 		}),
-	"Ac/L1/Current": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_current",
-			Help:        "A AC",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/L1/Energy/Forward": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_energy_forward_kwh",
-			Help:        "kWh",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/L1/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/L1/Voltage": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_voltage_volts",
-			Help:        "V AC",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/L2/Current": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_current_amps",
-			Help:        "A AC",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/L2/Energy/Forward": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_energy_forward_kwh",
-			Help:        "kWh",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/L2/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/L2/Voltage": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_voltage_volts",
-			Help:        "V AC",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/L3/Current": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_current_amps",
-			Help:        "A AC",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
-	"Ac/L3/Energy/Forward": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_energy_forward_kwh",
-			Help:        "kWh",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
-	"Ac/L3/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
-	"Ac/L3/Voltage": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_phase_voltage_volts",
-			Help:        "V AC",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
+	"Ac/L1/Current":        labeledGauge(phaseLabel, "1", "ac_phase_current", "A AC"),
+	"Ac/L1/Energy/Forward": labeledGauge(phaseLabel, "1", "ac_phase_energy_forward_kwh", "kWh"),
+	"Ac/L1/Power":          labeledGauge(phaseLabel, "1", "ac_phase_power_watts", "W"),
+	"Ac/L1/Voltage":        labeledGauge(phaseLabel, "1", "ac_phase_voltage_volts", "V AC"),
+	"Ac/L2/Current":        labeledGauge(phaseLabel, "2", "ac_phase_current_amps", "A AC"),
+	"Ac/L2/Energy/Forward": labeledGauge(phaseLabel, "2", "ac_phase_energy_forward_kwh", "kWh"),
+	"Ac/L2/Power":          labeledGauge(phaseLabel, "2", "ac_phase_power_watts", "W"),
+	"Ac/L2/Voltage":        labeledGauge(phaseLabel, "2", "ac_phase_voltage_volts", "V AC"),
+	"Ac/L3/Current":        labeledGauge(phaseLabel, "3", "ac_phase_current_amps", "A AC"),
+	"Ac/L3/Energy/Forward": labeledGauge(phaseLabel, "3", "ac_phase_energy_forward_kwh", "kWh"),
+	"Ac/L3/Power":          labeledGauge(phaseLabel, "3", "ac_phase_power_watts", "W"),
+	"Ac/L3/Voltage":        labeledGauge(phaseLabel, "3", "ac_phase_voltage_volts", "V AC"),
 	"Ac/Current": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_current_amps",
@@ -963,18 +750,8 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "status_code",
 			Help: "0=Startup 0; 1=Startup 1; 2=Startup 2; 3=Startup 4=Startup 4; 5=Startup 5; 6=Startup 6; 7=Running; 8=Standby; 9=Boot loading; 10=Error",
 		}),
-	"Ac/In/L1/I": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_input_phase_current_amps",
-			Help:        "A AC",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/In/L1/P": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_input_phase_power_watts",
-			Help:        "W",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
+	"Ac/In/L1/I": labeledGauge(phaseLabel, "1", "ac_input_phase_current_amps", "A AC"),
+	"Ac/In/L1/P": labeledGauge(phaseLabel, "1", "ac_input_phase_power_watts", "W"),
 	"Ac/In/CurrentLimit": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_input_current_limit_watts",
@@ -985,82 +762,27 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "output_count",
 			Help: "The actual number of outputs.",
 		}),
-	"Dc/1/Current": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_current_amps",
-			Help:        "A DC",
-			ConstLabels: prometheus.Labels{"n": "1"},
-		}),
-	"Dc/1/Temperature": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_temperature_celsius",
-			Help:        "°C - Battery temperature",
-			ConstLabels: prometheus.Labels{"n": "1"},
-		}),
-	"Dc/2/Voltage": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_voltage_volts",
-			Help:        "V DC",
-			ConstLabels: prometheus.Labels{"n": "2"},
-		}),
-	"Dc/2/Current": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_current_amps",
-			Help:        "A DC",
-			ConstLabels: prometheus.Labels{"n": "2"},
-		}),
-	"Dc/2/Temperature": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "dc_temperature_celsius",
-			Help:        "°C - Battery temperature",
-			ConstLabels: prometheus.Labels{"n": "2"},
-		}),
+	"Dc/1/Current":     labeledGauge("n", "1", "dc_current_amps", "A DC"),
+	"Dc/1/Temperature": labeledGauge("n", "1", "dc_temperature_celsius", "°C - Battery temperature"),
+	"Dc/2/Voltage":     labeledGauge("n", "2", "dc_voltage_volts", "V DC"),
+	"Dc/2/Current":     labeledGauge("n", "2", "dc_current_amps", "A DC"),
+	"Dc/2/Temperature": labeledGauge("n", "2", "dc_temperature_celsius", "°C - Battery temperature"),
 	"Ac/Energy/Reverse": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_energy_reverse_kwh",
 			Help: "",
 		}),
-	"Ac/Grid/L1/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_grid_phase_power_watt",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/Grid/L2/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_grid_phase_power_watt",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/Grid/L3/Power": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_grid_phase_power_watt",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
+	"Ac/Grid/L1/Power": labeledGauge(phaseLabel, "1", "ac_grid_phase_power_watt", ""),
+	"Ac/Grid/L2/Power": labeledGauge(phaseLabel, "2", "ac_grid_phase_power_watt", ""),
+	"Ac/Grid/L3/Power": labeledGauge(phaseLabel, "3", "ac_grid_phase_power_watt", ""),
 	"Ac/Grid/NumberOfPhases": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "ac_grid_number_of_phases",
 			Help: "",
 		}),
-	"Ac/L1/Energy/Reverse": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_energy_phase_reverse_kwh",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"phase": "1"},
-		}),
-	"Ac/L2/Energy/Reverse": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_energy_phase_reverse_kwh",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"phase": "2"},
-		}),
-	"Ac/L3/Energy/Reverse": gaugeObserver(
-		prometheus.GaugeOpts{
-			Name:        "ac_energy_phase_reverse_kwh",
-			Help:        "",
-			ConstLabels: prometheus.Labels{"phase": "3"},
-		}),
+	"Ac/L1/Energy/Reverse": labeledGauge(phaseLabel, "1", "ac_energy_phase_reverse_kwh", ""),
+	"Ac/L2/Energy/Reverse": labeledGauge(phaseLabel, "2", "ac_energy_phase_reverse_kwh", ""),
+	"Ac/L3/Energy/Reverse": labeledGauge(phaseLabel, "3", "ac_energy_phase_reverse_kwh", ""),
 	"Dc/Battery/Temperature": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "dc_battery_temperature_celsius",
