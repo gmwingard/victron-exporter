@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ func newTLSConfig() *tls.Config {
 	// have one. It's also possible to omit this in order to use the
 	// default root set of the current operating system.
 	roots := x509.NewCertPool()
+
 	ok := roots.AppendCertsFromPEM([]byte(rootPEM))
 	if !ok {
 		panic("failed to parse root certificate")
@@ -51,8 +54,7 @@ type mqttConnectionConfig struct {
 
 func connectWait(client mqtt.Client) error {
 	token := client.Connect()
-	for !token.WaitTimeout(3 * time.Second) {
-	}
+	token.Wait()
 
 	err := token.Error()
 	if err != nil {
@@ -87,9 +89,9 @@ func listen(clientID string, config mqttConnectionConfig, topic string) error {
 }
 
 func newConnectionLostHandler(clientID string) mqtt.ConnectionLostHandler {
-	return func(c mqtt.Client, e error) {
+	return func(_ mqtt.Client, e error) {
 		log.WithFields(log.Fields{
-			"client_id": clientID,
+			clientIDLabel: clientID,
 		}).WithError(e).Error("mqtt connection lost")
 		connectionStatus.WithLabelValues(clientID).Set(0)
 		connectionStatusSinceTimeSeconds.WithLabelValues(clientID).Set(float64(time.Now().Unix()))
@@ -98,7 +100,7 @@ func newConnectionLostHandler(clientID string) mqtt.ConnectionLostHandler {
 
 func newConnectionHandler(clientID string, wrapped mqtt.OnConnectHandler) mqtt.OnConnectHandler {
 	return func(c mqtt.Client) {
-		log.WithField("client_id", clientID).Info("mqtt connected")
+		log.WithField(clientIDLabel, clientID).Info("mqtt connected")
 		connectionStatus.WithLabelValues(clientID).Set(1)
 		connectionStatusSinceTimeSeconds.WithLabelValues(clientID).Set(float64(time.Now().Unix()))
 
@@ -117,11 +119,12 @@ func createClientOptions(clientID string, config mqttConnectionConfig, onConnect
 	opts.SetConnectionLostHandler(newConnectionLostHandler(clientID))
 	opts.SetOnConnectHandler(newConnectionHandler(clientID, onConnectionHandler))
 
+	brokerAddr := net.JoinHostPort(config.host, strconv.Itoa(config.port))
 	if config.secure {
-		opts.AddBroker(fmt.Sprintf("ssl://%s:%d", config.host, config.port))
+		opts.AddBroker("ssl://" + brokerAddr)
 		opts.SetTLSConfig(newTLSConfig())
 	} else {
-		opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.host, config.port))
+		opts.AddBroker("tcp://" + brokerAddr)
 	}
 
 	if config.username != "" {
@@ -146,16 +149,18 @@ type victronStringValue struct {
 	Value *string `json:"value"`
 }
 
-func mqttSubscriptionHandler(client mqtt.Client, msg mqtt.Message) {
+func mqttSubscriptionHandler(_ mqtt.Client, msg mqtt.Message) {
 	subscriptionsUpdatesTotal.Inc()
 
 	topic := msg.Topic()
+
 	topicParts := strings.Split(topic, "/")
 	if len(topicParts) < 5 {
 		subscriptionsUpdatesIgnoredTotal.Inc()
 
 		return
 	}
+
 	topicInfoParts := topicParts[4:]
 
 	componentType := topicParts[2]
